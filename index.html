@@ -500,6 +500,152 @@ tbody tr.row-bad{background:#fff9fa}
   .filter-actions{display:grid;grid-template-columns:1fr 1fr}
 }
 
+
+/* ===== Optimización móvil: filtros plegables ===== */
+.filter-head-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.filter-toggle{
+  display:none;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-height:38px;
+  padding:8px 12px;
+  border:1px solid #cfe0ec;
+  border-radius:11px;
+  background:#fff;
+  color:#123f66;
+  font-weight:900;
+  cursor:pointer;
+}
+.filter-toggle-icon{
+  font-size:1rem;
+  line-height:1;
+  transition:transform .18s ease;
+}
+.filter-shell.filters-open .filter-toggle-icon{transform:rotate(180deg)}
+.mobile-filter-summary{
+  display:none;
+  gap:7px;
+  flex-wrap:wrap;
+  align-items:center;
+  margin-top:7px;
+}
+.mobile-filter-chip{
+  max-width:100%;
+  padding:6px 9px;
+  border-radius:999px;
+  background:#edf5fb;
+  border:1px solid #d7e5f0;
+  color:#36536e;
+  font-size:.68rem;
+  font-weight:850;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.mobile-filter-chip.primary{
+  background:#e4f6f2;
+  border-color:#c7e9df;
+  color:#0b7658;
+}
+
+@media(max-width:760px){
+  .toolbar{
+    padding:6px 0 7px;
+  }
+  .filter-shell{
+    padding:9px 10px;
+    border-radius:14px;
+  }
+  .filter-head{
+    display:flex!important;
+    align-items:center!important;
+    margin-bottom:0;
+  }
+  .filter-head > div:first-child{
+    display:block!important;
+    min-width:0;
+  }
+  .filter-eyebrow{display:none}
+  .filter-head strong{
+    display:block!important;
+    margin:0!important;
+    font-size:.82rem;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .filter-head-actions{margin-left:auto}
+  .filter-mode-chip{display:none!important}
+  .filter-toggle{display:inline-flex}
+  .filter-shell.filters-collapsed .filters{display:none}
+  .filter-shell.filters-collapsed .mobile-filter-summary{display:flex}
+  .filter-shell.filters-open .filters{
+    display:grid;
+    max-height:68vh;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    margin-top:10px;
+    padding:2px 2px 4px;
+  }
+  .filter-shell.filters-open .mobile-filter-summary{display:none}
+  .filter-primary{
+    padding:7px 8px 6px;
+    margin:0;
+  }
+  .filter select{
+    min-height:42px;
+    padding:9px 11px;
+    font-size:.92rem;
+  }
+  .filter small{display:none}
+  .filter-actions{
+    position:sticky;
+    bottom:0;
+    z-index:3;
+    padding:8px 0 2px;
+    background:linear-gradient(180deg,rgba(247,250,253,.45),#f7fafd 35%);
+  }
+  .filter-actions .btn{
+    min-height:42px;
+    padding:9px 12px;
+  }
+  .kpis{
+    gap:9px;
+    margin-top:9px;
+  }
+  .kpi{
+    min-height:104px;
+    padding:13px 12px;
+  }
+  .kpi .value{
+    margin-top:8px;
+    font-size:1.38rem;
+  }
+  .kpi .note{display:none}
+  .kpi.product .value{font-size:.82rem}
+  .supervisor-kpi{
+    min-height:80px;
+    padding:11px 12px;
+  }
+  .supervisor-kpi strong{font-size:1.08rem}
+  .supervisor-kpi.product strong{font-size:.73rem}
+}
+
+@media(max-width:420px){
+  .filter-toggle{
+    padding:8px 10px;
+    font-size:.78rem;
+  }
+  .mobile-filter-chip{font-size:.64rem}
+  .kpi .label{font-size:.61rem}
+  .kpi .value{font-size:1.25rem}
+}
+
 </style>
 </head>
 <body>
@@ -527,10 +673,18 @@ tbody tr.row-bad{background:#fff9fa}
         <span class="filter-eyebrow">Segmentación del tablero</span>
         <strong id="filterModeLabel">Vista general</strong>
       </div>
-      <span class="filter-mode-chip" id="filterModeChip">Dirección de Ventas</span>
+      <div class="filter-head-actions">
+        <span class="filter-mode-chip" id="filterModeChip">Dirección de Ventas</span>
+        <button class="filter-toggle" id="filterToggle" type="button" aria-expanded="false" aria-controls="filterPanel">
+          <span id="filterToggleText">Mostrar filtros</span>
+          <span class="filter-toggle-icon" aria-hidden="true">⌄</span>
+        </button>
+      </div>
     </div>
 
-    <div class="filters">
+    <div class="mobile-filter-summary" id="mobileFilterSummary" aria-live="polite"></div>
+
+    <div class="filters" id="filterPanel">
       <div class="filter filter-primary">
         <label>Supervisor</label>
         <select id="fSupervisor"></select>
@@ -733,6 +887,68 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&
 const els=Object.fromEntries([...document.querySelectorAll('[id]')].map(el=>[el.id,el]));
 let activeStoreKey='';
 
+let mobileFiltersOpen=false;
+const mobileMedia=window.matchMedia('(max-width:760px)');
+
+function activeFilterCount(){
+  return ['fSupervisor','fGrupo','fTienda','fProducto','fStatus']
+    .filter(id=>Boolean(selected(id))).length;
+}
+
+function updateMobileFilterSummary(){
+  if(!els.mobileFilterSummary) return;
+  const chips=[];
+  const supervisor=selected('fSupervisor');
+  const group=selected('fGrupo');
+  const store=selected('fTienda');
+  const product=selected('fProducto');
+  const status=selected('fStatus');
+
+  chips.push(`<span class="mobile-filter-chip primary">${esc(supervisor||'Vista general')}</span>`);
+  if(group) chips.push(`<span class="mobile-filter-chip">${esc(group)}</span>`);
+  if(store) chips.push(`<span class="mobile-filter-chip">${esc(store)}</span>`);
+  if(product){
+    const label=els.fProducto.options[els.fProducto.selectedIndex]?.text || product;
+    chips.push(`<span class="mobile-filter-chip">${esc(label)}</span>`);
+  }
+  if(status){
+    chips.push(`<span class="mobile-filter-chip">${status==='completed'?'Meta alcanzada':'Meta no alcanzada'}</span>`);
+  }
+  if(!activeFilterCount()) chips.push('<span class="mobile-filter-chip">Sin filtros activos</span>');
+  els.mobileFilterSummary.innerHTML=chips.join('');
+}
+
+function setMobileFilters(open,focusFirst=false){
+  mobileFiltersOpen=Boolean(open);
+  const shell=els.filterToolbar?.querySelector('.filter-shell');
+  if(!shell) return;
+
+  if(!mobileMedia.matches){
+    shell.classList.remove('filters-collapsed','filters-open');
+    els.filterToggle?.setAttribute('aria-expanded','true');
+    return;
+  }
+
+  shell.classList.toggle('filters-open',mobileFiltersOpen);
+  shell.classList.toggle('filters-collapsed',!mobileFiltersOpen);
+  els.filterToggle?.setAttribute('aria-expanded',String(mobileFiltersOpen));
+  if(els.filterToggleText){
+    const count=activeFilterCount();
+    els.filterToggleText.textContent=mobileFiltersOpen
+      ? 'Ocultar filtros'
+      : `Filtros${count?` (${count})`:''}`;
+  }
+  updateMobileFilterSummary();
+  if(mobileFiltersOpen && focusFirst){
+    setTimeout(()=>els.fSupervisor?.focus({preventScroll:true}),120);
+  }
+}
+
+function syncMobileFilters(){
+  if(mobileMedia.matches) setMobileFilters(mobileFiltersOpen);
+  else setMobileFilters(true);
+}
+
 function metaRow(r){return ((r.mar+r.abr+r.may)/3)*1.20}
 function saleRow(r){return r.jun+r.jul}
 
@@ -829,6 +1045,7 @@ function refreshFilters(){
     <option value="not_completed">Meta no alcanzada (${notCompleted})</option>
   `;
   if(['completed','not_completed'].includes(statusCurrent)) els.fStatus.value=statusCurrent;
+  updateMobileFilterSummary();
 }
 
 function currentRows(){return rowsWithStatus()}
@@ -1129,6 +1346,13 @@ function exportCSV(){
     render();
     const supervisorChanged=id==='fSupervisor';
     updateViewMode(supervisorChanged && Boolean(selected('fSupervisor')));
+    updateMobileFilterSummary();
+
+    if(mobileMedia.matches && supervisorChanged && selected('fSupervisor')){
+      setMobileFilters(false);
+    }else if(mobileMedia.matches){
+      setMobileFilters(mobileFiltersOpen);
+    }
 
     if(supervisorChanged && selected('fSupervisor')){
       setTimeout(scrollToStoreSection,180);
@@ -1142,6 +1366,8 @@ els.resetBtn.addEventListener('click',()=>{
   refreshFilters();
   render();
   updateViewMode(false);
+  updateMobileFilterSummary();
+  if(mobileMedia.matches) setMobileFilters(false);
   els.skuDetailSection.classList.add('is-hidden');
   window.scrollTo({top:0,behavior:'smooth'});
 });
@@ -1152,9 +1378,15 @@ els.closeSkuBtn.addEventListener('click',()=>{
   els.storeSection.scrollIntoView({behavior:'smooth',block:'start'});
 });
 
+els.filterToggle?.addEventListener('click',()=>setMobileFilters(!mobileFiltersOpen,true));
+if(typeof mobileMedia.addEventListener==='function') mobileMedia.addEventListener('change',syncMobileFilters);
+else if(typeof mobileMedia.addListener==='function') mobileMedia.addListener(syncMobileFilters);
+
 refreshFilters();
 render();
 updateViewMode(false);
+mobileFiltersOpen=!mobileMedia.matches;
+syncMobileFilters();
 </script>
 </body>
 </html>
